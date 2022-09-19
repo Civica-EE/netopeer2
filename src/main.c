@@ -47,6 +47,9 @@
 #ifdef NC_ENABLED_TLS
 # include "netconf_server_tls.h"
 #endif
+#ifdef ENABLE_RESTCONF
+# include "restconf_server.h"
+#endif
 #include "netconf_acm.h"
 #include "netconf_confirmed_commit.h"
 #include "netconf_monitoring.h"
@@ -60,7 +63,7 @@ ATOMIC_T loop_continue = 1;
 /* NETCONF SID of session to skip diff check for */
 ATOMIC_T skip_nacm_nc_sid;
 
-static void *worker_thread(void *arg);
+static void *netconf_worker_thread(int idx);
 
 /**
  * @brief Signal handler to control the process
@@ -662,6 +665,11 @@ server_destroy(void)
         nc_ps_free(np2srv.nc_ps);
     }
 
+#ifdef ENABLE_RESTCONF
+    /* restconf cleanup */
+    restconf_server_shutdown();
+#endif
+    
     /* libnetconf2 cleanup */
     nc_server_destroy();
 
@@ -961,10 +969,10 @@ error:
  * @return NULL.
  */
 static void *
-worker_thread(void *arg)
+netconf_worker_thread(int idx)
 {
     NC_MSG_TYPE msgtype;
-    int rc, idx = *((int *)arg);
+    int rc;
     struct nc_session *ncs;
 
 #ifdef NC_ENABLED_SSH
@@ -1030,8 +1038,26 @@ worker_thread(void *arg)
 #if defined (NC_ENABLED_SSH) || defined (NC_ENABLED_TLS)
     nc_thread_destroy();
 #endif
-    free(arg);
     return NULL;
+}
+
+static void *
+worker_thread (void *arg)
+{
+    int idx = (int) arg;
+    void *rc;
+
+#ifdef ENABLE_RESTCONF
+    if (idx % 2)
+        rc = (void*) restconf_worker_thread(idx, loop_continue);
+    else
+#endif
+        rc = netconf_worker_thread(idx);
+
+    if (rc)
+        ERR("Thread %d returned %p!", idx, rc);
+    
+    return rc;
 }
 
 static void
@@ -1077,7 +1103,7 @@ int
 main(int argc, char *argv[])
 {
     int ret = EXIT_SUCCESS;
-    int c, *idx, i;
+    int c, i;
     int daemonize = 1, verb = 0;
     int pidfd;
     const char *pidfile = NP2SRV_PID_FILE_PATH;
@@ -1307,6 +1333,15 @@ main(int argc, char *argv[])
         goto cleanup;
     }
 
+#ifdef ENABLE_RESTCONF
+    /* Note backlog actually 2xserving threads so slight oversubscription (if
+       that matters here) */
+    if (restconf_server_init(NP2SRV_THREAD_COUNT)) {
+        ret = EXIT_FAILURE;
+        goto cleanup;
+    }
+#endif
+    
     /* subscribe to sysrepo */
     if (server_rpc_subscribe()) {
         ret = EXIT_FAILURE;
@@ -1319,16 +1354,12 @@ main(int argc, char *argv[])
 
     /* start additional worker threads */
     for (i = 1; i < NP2SRV_THREAD_COUNT; ++i) {
-        idx = malloc(sizeof *idx);
-        *idx = i;
-        pthread_create(&np2srv.workers[*idx], NULL, worker_thread, idx);
+        pthread_create(&np2srv.workers[i], NULL, worker_thread, (void*) i);
     }
 
     /* one worker will use this thread */
     np2srv.workers[0] = pthread_self();
-    idx = malloc(sizeof *idx);
-    *idx = 0;
-    worker_thread(idx);
+    worker_thread((void*) 0);
 
     /* wait for other worker threads to finish */
     for (i = 1; i < NP2SRV_THREAD_COUNT; ++i) {

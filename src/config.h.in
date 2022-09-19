@@ -17,6 +17,8 @@
 #ifndef NP2SRV_CONFIG_H_
 #define NP2SRV_CONFIG_H_
 
+#include <stdint.h>
+
 /** @brief Netopeer2 Server version */
 #define NP2SRV_VERSION "@NP2SRV_VERSION@"
 
@@ -31,6 +33,19 @@
  * the Filesystem Hierarchy Standard
  */
 #define NP2SRV_UNIX_SOCK_PATH "@PIDFILE_PREFIX@/netopeer2-server.sock"
+
+/**
+ * @brief Enable restconf front-end.
+ */
+#cmakedefine ENABLE_RESTCONF
+
+#ifdef ENABLE_RESTCONF
+
+/** @brief Restconf Sockpath, writed by nginx & fastCGI
+ */
+#define NP2SRV_FCGI_SOCKPATH "@PIDFILE_PREFIX@/netopeer2-fcgi.sock"
+
+#endif
 
 /** @brief Maximum number of threads handling session requests
  */

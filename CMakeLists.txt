@@ -71,6 +71,8 @@ set(THREAD_COUNT 5 CACHE STRING "Number of threads accepting new sessions and ha
 set(NACM_RECOVERY_UID 0 CACHE STRING "NACM recovery session UID that has unrestricted access")
 set(POLL_IO_TIMEOUT 10 CACHE STRING "Timeout in milliseconds of polling sessions for new data. It is also used for synchronization of low level IO such as sending a reply while a notification is being sent")
 set(YANG_MODULE_DIR "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DATADIR}/yang/modules/netopeer2" CACHE STRING "Directory where to copy the YANG modules to")
+option(ENABLE_RESTCONF "Enable RESTCONF capability" OFF)
+
 
 # script options
 option(INSTALL_MODULES "Install required modules into sysrepo" ON)
@@ -217,6 +219,15 @@ include_directories(${LIBNETCONF2_INCLUDE_DIRS})
 list(APPEND CMAKE_REQUIRED_INCLUDES ${LIBNETCONF2_INCLUDE_DIRS})
 list(APPEND CMAKE_REQUIRED_LIBRARIES ${LIBNETCONF2_LIBRARIES})
 
+# Restconf is enabled - global build switches
+if(ENABLE_RESTCONF)
+    find_package(LibFCGI REQUIRED)
+    include_directories(${LIBFCGI_INCLUDE_DIRS})
+    list(APPEND CMAKE_REQUIRED_INCLUDES ${LIBFCGI_INCLUDE_DIRS})
+    list(APPEND CMAKE_REQUIRED_LIBRARIES ${LIBFCGI_LIBRARIES})
+endif()
+
+
 # at least some remote transport is enabled
 if(LIBNETCONF2_ENABLED_SSH OR LIBNETCONF2_ENABLED_TLS)
     list(APPEND SERVER_SRC src/netconf_server.c)
@@ -231,6 +242,16 @@ endif()
 if(LIBNETCONF2_ENABLED_TLS)
     list(APPEND SERVER_SRC src/netconf_server_tls.c)
 endif()
+
+# Restconf is enabled - extra sources
+if(ENABLE_RESTCONF)
+  list(APPEND SERVER_SRC
+           src/restconf_lib.c
+           src/restconf_path.c
+           src/restconf_methods.c
+           src/restconf_server.c)
+endif()
+
 
 # link compat
 use_compat()
@@ -290,6 +311,12 @@ target_link_libraries(netopeer2-server ${SYSREPO_LIBRARIES})
 include_directories(${SYSREPO_INCLUDE_DIRS})
 list(APPEND CMAKE_REQUIRED_INCLUDES ${SYSREPO_INCLUDE_DIRS})
 list(APPEND CMAKE_REQUIRED_LIBRARIES ${SYSREPO_LIBRARIES})
+
+# Restconf is enabled - link options
+if(ENABLE_RESTCONF)
+    target_link_libraries(netopeer2-server ${LIBFCGI_LIBRARIES})
+endif()
+
 
 # generate files
 configure_file("${PROJECT_SOURCE_DIR}/src/config.h.in" "${PROJECT_BINARY_DIR}/config.h" ESCAPE_QUOTES @ONLY)
@@ -367,3 +394,4 @@ add_custom_target(cleancache
 add_custom_target(uninstall "${CMAKE_COMMAND}" -P "${CMAKE_MODULE_PATH}/uninstall.cmake"
     COMMAND ${SCRIPT_DIR}/remove.sh
     COMMENT "Removing netopeer2 modules from sysrepo...")
+
