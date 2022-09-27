@@ -1,0 +1,131 @@
+/**
+ * @file jtree.css
+ *
+ * @brief CSS for restconf tree widget
+ *
+ * @author Alexandru Ponoviciu <alexandru.panoviciu@civica.co.uk>
+ *
+ * @copyright
+ * Copyright (c) 2022 Civica NI Ltd
+ *
+ * This source code is licensed under BSD 3-Clause License (the "License").
+ * You may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://opensource.org/licenses/BSD-3-Clause
+ */
+
+body {
+  font-family: sans,helvetica,arial;
+  font-size: 14px;
+}
+
+.jtree__viewer {
+  background: repeating-linear-gradient(to bottom, aliceblue 0px, aliceblue 19px, snow 19px, snow 38px);
+}
+
+.jtree {
+  font-family: sans,helvetica,arial;
+  font-size: 14px;
+}
+.jtree > .jtree__item {
+  display: block;
+}
+
+.jtree__item {
+    /*
+  border-style: dotted;
+  border-width: 1px;
+  */
+  display: none;
+  margin-top: 2px;
+  padding-left: 15px;
+}
+
+.jtree__item--collapsible {    
+  cursor: pointer;
+  overflow: hidden;
+  position: relative;
+  padding-left: 20px;
+}
+
+.jtree__item--collapsible::after {
+    background-color: lightgrey; 
+    content: "";
+    height: 100%;
+    left: 9px;
+    position: absolute;
+    top: 18px;
+    width: 1px;
+}
+
+.jtree__item--collapsible:hover > .jtree__ckey, .jtree__item--collapsible:hover > .jtree__value {
+  text-decoration: underline;
+}
+
+.jtree__toggle {
+  display: none;
+}
+
+.jtree__toggle:checked ~ .jtree__item {
+  display: block;
+}
+
+.jtree__toggle:checked ~ .jtree__ckey::before {
+    
+    /*transform:rotate(90deg);*/
+    content: "-";
+}
+
+.jtree__key {
+  color: darkblue;
+  display: inline-block;
+  width: 30%;
+}
+.jtree__key::after {
+  /*content: ": ";*/
+}
+
+.jtree__ckey {
+  color: darkblue;
+  display: inline-block;
+  width: 100%;
+}
+.jtree__ckey::before {
+    color: black;
+    font-family: monospace;
+    font-weight: bold;
+    /*content: "\22b3"*/
+    content: "+";
+    position: absolute;
+    left: 5px;
+}
+.jtree__ckey::after {
+  /*content: ": ";*/
+}
+
+.jtree__value {
+    display: inline;
+    font-family: monospace;
+}
+
+.jtree__value--string {
+  font-style: italic;
+  /*color: green;*/
+}
+
+.jtree__value--number {
+  /*color: blue;*/
+}
+
+.jtree__value--boolean {
+  /*color: red;*/
+}
+
+.jtree__highlight {
+    color: red;
+}
+
+.console {
+  font-size: 12px;
+}

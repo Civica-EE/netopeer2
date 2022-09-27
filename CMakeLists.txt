@@ -369,11 +369,18 @@ if(MERGE_LISTEN_CONFIG)
     ")
 endif()
 
-# Restconf is enabled - web bits
+# Restconf enabled - install web bits
 if(ENABLE_RESTCONF)
-  install(FILES ${SCRIPT_DIR}/restconf.cgi
-    DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}/netopeer2/
-    PERMISSIONS OWNER_READ OWNER_EXECUTE OWNER_WRITE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
+  install(PROGRAMS
+    "${PROJECT_SOURCE_DIR}/www/restconf.cgi"
+    DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}/netopeer2)
+  install(DIRECTORY "${PROJECT_SOURCE_DIR}/www"
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/netopeer2
+    FILES_MATCHING
+    PATTERN "*.html"
+    PATTERN "*.js"
+    PATTERN "*.css"
+    )
 endif()
 
 
