@@ -88,6 +88,13 @@ signal_handler(int sig)
             exit(EXIT_FAILURE);
         }
         ATOMIC_STORE_RELAXED(loop_continue, 0);
+#ifdef ENABLE_RESTCONF
+        restconf_server_stop();
+        for (int i = 1; i < NP2SRV_THREAD_COUNT; ++i) {
+            if (i % 2)
+                pthread_kill(np2srv.workers[i], SIGUSR1);
+    }
+#endif        
         break;
     default:
         exit(EXIT_FAILURE);
@@ -270,7 +277,7 @@ error:
  * @param[in] err_info SR error info.
  * @return Server reply structure.
  */
-static struct nc_server_reply *
+struct nc_server_reply *
 np2srv_err_reply_sr(const sr_error_info_t *err_info)
 {
     struct nc_server_reply *reply = NULL;
@@ -1034,6 +1041,8 @@ netconf_worker_thread(int idx)
 #endif
     }
 
+    DBG("Netconf thread %d exiting", idx);
+
     /* cleanup */
 #if defined (NC_ENABLED_SSH) || defined (NC_ENABLED_TLS)
     nc_thread_destroy();
@@ -1049,7 +1058,7 @@ worker_thread (void *arg)
 
 #ifdef ENABLE_RESTCONF
     if (idx % 2)
-        rc = (void*) restconf_worker_thread(idx, loop_continue);
+        rc = (void*) restconf_worker_thread(idx);
     else
 #endif
         rc = netconf_worker_thread(idx);

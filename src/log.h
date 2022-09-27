@@ -53,7 +53,15 @@ void np2log_printf(NC_VERB_LEVEL level, const char *format, ...);
 #define ERR(format, args ...) np2log_printf(NC_VERB_ERROR,format,##args)
 #define WRN(format, args ...) np2log_printf(NC_VERB_WARNING,format,##args)
 #define VRB(format, args ...) np2log_printf(NC_VERB_VERBOSE,format,##args)
-#define DBG(format, args ...) np2log_printf(NC_VERB_DEBUG,format,##args)
+#ifndef NDEBUG
+# define DBG(format, args ...) np2log_printf(NC_VERB_DEBUG,"%s:%d: " format,\
+                                             __RILE__, __LINE__,\
+                                             ##args)
+#else
+# define DBG(format, args ...) 
+#endif
+#define _DBG(format, args ...) 
+
 
 #define EMEM ERR("Memory allocation failed (%s:%d)", __FILE__, __LINE__)
 #define EINT ERR("Internal error (%s:%d)", __FILE__, __LINE__)

@@ -1,14 +1,29 @@
 /**
  * @file restconf_method.c
- * @author Hongcheng Zhong <spartazhc@gmail.com>
+ *
  * @brief restconf HTTP method implement:
  * use op_editconfig in netopeer2-server to be base of POST, PUT, PATCH
  * use op_get_config to be base of GET method
  *
+ * @author Radek Krejci <rkrejci@cesnet.cz>
+ * @author Michal Vasko <mvasko@cesnet.cz>
+ * @author Hongcheng Zhong <spartazhc@gmail.com>
+ * @author Alexandru Ponoviciu <alexandru.panoviciu@civica.co.uk>
+ *
+ * @copyright
+ * Copyright (c) 2022 Civica NI Ltd
  * Copyright (c) 2019 Intel and/or its affiliates.
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at:
+ * Copyright (c) 2016 - 2017 CESNET, z.s.p.o.
+ *
+ * This source code is licensed under BSD 3-Clause License (the "License").
+ * You may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://opensource.org/licenses/BSD-3-Clause
+ *
+ * Portions licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.  You may
+ * obtain a copy of the License at:
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -17,34 +32,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
-*/
-
-/**
- * @file op_editconfig.c
- * @author Radek Krejci <rkrejci@cesnet.cz>
- * @brief NETCONF <edit-config> operation implementation
- *
- * Copyright (c) 2016 CESNET, z.s.p.o.
- *
- * This source code is licensed under BSD 3-Clause License (the "License").
- * You may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     https://opensource.org/licenses/BSD-3-Clause
- */
-/**
- * @file op_get_config.c
- * @author Radek Krejci <rkrejci@cesnet.cz>
- * @author Michal Vasko <mvasko@cesnet.cz>
- * @brief NETCONF <get> and <get-config> operations implementation
- *
- * Copyright (c) 2016 CESNET, z.s.p.o.
- *
- * This source code is licensed under BSD 3-Clause License (the "License").
- * You may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     https://opensource.org/licenses/BSD-3-Clause
  */
 
 #define _GNU_SOURCE
@@ -88,15 +75,13 @@ struct nc_server_reply {
 struct nc_server_reply_data {
     NC_RPL type;
     struct lyd_node *data;
-    char free;
+    int free;
     NC_WD_MODE wd;
 };
 
 struct nc_server_reply_error {
     NC_RPL type;
-    struct ly_ctx *ctx;
-    struct nc_server_error **err;
-    uint32_t count;
+    struct lyd_node *err;
 };
 
 // apanovic@asidua.com 21/11/2021 - ^^^^^^^^^^^^^^^^^
@@ -138,7 +123,7 @@ struct buff {
     char buf[BUFFERSIZE]; /* fix length, not good */
     size_t len;
 };
-
+#if 0
 void
 rc_write_error(FCGX_Request *r, int use_xml, struct nc_server_error *err)
 {
@@ -258,7 +243,7 @@ rc_write_error(FCGX_Request *r, int use_xml, struct nc_server_error *err)
     }
 
 }
-
+#endif
 // according to nc_write_msg_io
 int
 rc_write_reply(FCGX_Request *r, int use_xml,  NC_MSG_TYPE type, ...)
@@ -271,7 +256,7 @@ rc_write_reply(FCGX_Request *r, int use_xml,  NC_MSG_TYPE type, ...)
     struct nc_server_reply_error *error_rpl;
     uint16_t i;
 
-    VRB("%s", __FUNCTION__);
+    DBG("%s", __FUNCTION__);
 
     va_start(ap, type);
 
@@ -289,11 +274,8 @@ rc_write_reply(FCGX_Request *r, int use_xml,  NC_MSG_TYPE type, ...)
             break;
         case NC_RPL_DATA: /* use for GET */
             data_rpl = (struct nc_server_reply_data *)reply;
-            if (use_xml){
-                lyd_print_mem(&model_data, data_rpl->data, LYD_XML, LYP_FORMAT | LYP_WITHSIBLINGS);
-            } else {
-                lyd_print_mem(&model_data, data_rpl->data, LYD_JSON, LYP_FORMAT | LYP_WITHSIBLINGS);
-            }
+            lyd_print_mem(&model_data, data_rpl->data,
+                          use_xml ? LYD_XML : LYD_JSON, LYD_PRINT_WITHSIBLINGS);
             FCGX_SetExitStatus(200, r->out); /* OK */
             FCGX_FPrintF(r->out, "Content-Type: application/yang-data+%s\r\n", use_xml?"xml":"json");
             FCGX_FPrintF(r->out, "\r\n");
@@ -302,7 +284,7 @@ rc_write_reply(FCGX_Request *r, int use_xml,  NC_MSG_TYPE type, ...)
             break;
         case NC_RPL_ERROR:
             error_rpl = (struct nc_server_reply_error *)reply;
-            int code = restconf_err2code(nc_err_get_tag(error_rpl->err[i]));
+            int code = restconf_err2code(nc_err_get_tag(error_rpl->err));
             const char *reason_phrase;
             if ((reason_phrase = restconf_code2reason(code)) == NULL){
                 reason_phrase="";
@@ -311,6 +293,13 @@ rc_write_reply(FCGX_Request *r, int use_xml,  NC_MSG_TYPE type, ...)
             FCGX_FPrintF(r->out, "Status: %d %s\r\n", code, reason_phrase);
             FCGX_FPrintF(r->out, "Content-Type: application/yang-data+%s\r\n", use_xml?"xml":"json");
             FCGX_FPrintF(r->out, "\r\n");
+
+            lyd_print_mem(&model_data, error_rpl->err,
+                          use_xml ? LYD_XML : LYD_JSON, LYD_PRINT_WITHSIBLINGS);
+            FCGX_FPrintF(r->out, "%s", model_data ? model_data:"");
+            FCGX_FPrintF(r->out, "\n\n");
+
+#if 0
             if (use_xml) {
                 FCGX_FPrintF(r->out, "<errors xmlns=\"urn:ietf:params:xml:ns:yang:ietf-restconf\">\n");
             } else {
@@ -325,6 +314,7 @@ rc_write_reply(FCGX_Request *r, int use_xml,  NC_MSG_TYPE type, ...)
             } else {
                 FCGX_FPrintF(r->out, "}\r\n");
             }
+#endif
             break;
         default:
             EINT;
@@ -340,6 +330,7 @@ rc_write_reply(FCGX_Request *r, int use_xml,  NC_MSG_TYPE type, ...)
 
 cleanup:
     va_end(ap);
+
     return ret;
 }
 
@@ -373,7 +364,7 @@ int
 api_data_options(
             FCGX_Request *r)
 {
-    VRB("%s", __FUNCTION__);
+    DBG("%s", __FUNCTION__);
     FCGX_SetExitStatus(200, r->out); /* OK */
     FCGX_FPrintF(r->out, "Allow: OPTIONS,HEAD,GET,POST,PUT,DELETE\r\n");
     FCGX_FPrintF(r->out, "\r\n");
@@ -414,6 +405,7 @@ api_data_get_base(struct ly_ctx    *ly_ctx,
                   int           head)
 {
     int  retval;
+
     struct lyd_node *root = NULL;
     struct nc_server_reply *reply = NULL;
     struct lyd_node *data = NULL, *node = NULL;
@@ -421,25 +413,26 @@ api_data_get_base(struct ly_ctx    *ly_ctx,
     const struct lys_module *ietfnc_nmda = NULL;
     const struct lys_module *ietf_ds = NULL;
     char xpath[80] = {'\0'};
+    sr_session_ctx_t *sr_sess = NULL;
+    const sr_error_info_t *err_info;
 
     (void) qvec;
 
-    VRB("%s", __FUNCTION__);
+    DBG("%s", __FUNCTION__);
     /* copy from libnetconf2/src/session_client.c/nc_send_rpc */
-    ietfnc = ly_ctx_get_module(ly_ctx, "ietf-netconf", NULL, 1);
-    ietfnc_nmda = ly_ctx_get_module(ly_ctx, "ietf-netconf-nmda", NULL, 1);
-    
+    ietfnc = ly_ctx_get_module_latest(ly_ctx, "ietf-netconf");
     if (!ietfnc) {
         ERR("Session : missing \"ietf-netconf\" schema in the context.");
         return NC_MSG_ERROR;
     }
 
+    ietfnc_nmda = ly_ctx_get_module_latest(ly_ctx, "ietf-netconf-nmda");
     if (!ietfnc_nmda) {
         ERR("Session : missing \"ietf-netconf-nmda\" schema in the context.");
         return NC_MSG_ERROR;
     }
 
-    ietf_ds = ly_ctx_get_module(ly_ctx, "ietf-datastores", NULL, 1);
+    ietf_ds = ly_ctx_get_module_latest(ly_ctx, "ietf-datastores");
     if (!ietf_ds) {
         ERR("Session : missing \"ietf-datastores\" schema in the context.");
         return NC_MSG_ERROR;
@@ -449,14 +442,18 @@ api_data_get_base(struct ly_ctx    *ly_ctx,
     if ((retval = api_path2xpath(ly_ctx, pcvec, pi, xpath)))
         goto bail;
         
-    VRB("%s xpath = %s", __FUNCTION__, xpath);
+    DBG("%s xpath = %s", __FUNCTION__, xpath);
 
     /* Prepare lyd_node for netopeer2-cli to construct rpc
      * which is same to netopeer2-server decode rpc (without *priv)
      **/
-    data = lyd_new(NULL, ietfnc_nmda, "get-data");
-    node = lyd_new_leaf(data, ietfnc_nmda, "datastore", "ietf-datastores:operational");
-    node = lyd_new_leaf(data, ietfnc_nmda, "max-depth", "unbounded");
+    if (retval = lyd_new_inner(NULL, ietfnc_nmda, "get-data", 0, &data))
+        goto bail;
+    if (retval = lyd_new_term(data, ietfnc_nmda,
+                              "datastore", "ietf-datastores:operational", 0, &node))
+        goto bail;
+    if (lyd_new_term(data, ietfnc_nmda, "max-depth", "unbounded", 0, &node))
+        goto bail;
     /*
       node = lyd_new_anydata(data, NULL, "subtree-filter", NULL, LYD_ANYDATA_CONSTSTRING);
 
@@ -469,20 +466,42 @@ api_data_get_base(struct ly_ctx    *ly_ctx,
     lyd_insert_attr(node, NULL, "type", "xpath");
     lyd_insert_attr(node, NULL, "select", xpath);
     */    
-    root = lyd_new(NULL, ietfnc_nmda, "get-data");
 
-    retval = np2srv_rpc_getdata_cb(srs, "/ietf-netconf:get-data", data, SR_EV_RPC, 0, root, NULL);
+    if ((retval = sr_session_start(np2srv.sr_conn, SR_DS_RUNNING, &sr_sess)) != SR_ERR_OK)
+    {
+        ERR("Failed to start a sysrepo session (%s).", sr_strerror(retval));
+        goto bail;
+    }
+    sr_session_set_orig_name(sr_sess, "netopeer2");
+    int dummy_nc_id = -1;
+    sr_session_push_orig_data(sr_sess, sizeof(dummy_nc_id), &dummy_nc_id);
 
-    //lyd_print_file(stdout, root, LYD_XML, LYP_FORMAT | LYP_WITHSIBLINGS);
+#if 0
+    if (retval = lyd_new_inner(NULL, ietfnc_nmda, "get-data", 0, &root))
+        goto bail;
     
- bail:
+    retval = np2srv_rpc_getdata_cb(sr_sess, 0, NULL, data, SR_EV_RPC, 0, root, NULL);
+
+    lyd_print_file(stdout, root, LYD_XML, LYD_PRINT_WITHSIBLINGS);
+#else
+    /* sysrepo API, use the default timeout or slightly higher than the configured one */
+    retval = sr_rpc_send_tree(sr_sess, data, 0, &root);
+#endif
+    
+ bail: 
 
     if (retval)
     {
-        struct nc_server_error *e = nc_err(NC_ERR_OP_FAILED,
-                                           NC_ERR_TYPE_APP);
+        ERR("Failed to send an RPC (%s).", sr_strerror(retval));
+
+#if 0        
+        struct lyd_node *e = nc_err(ly_ctx, NC_ERR_OP_FAILED, NC_ERR_TYPE_APP);
         reply = nc_server_reply_err(e);
-        nc_err_free(e);
+#else
+        /* build proper error */
+        sr_session_get_error(sr_sess, &err_info);
+        reply = np2srv_err_reply_sr(err_info);
+#endif
     }
     else
     {
@@ -496,16 +515,18 @@ api_data_get_base(struct ly_ctx    *ly_ctx,
         }
     }
 
+    if (sr_sess) sr_session_stop(sr_sess);
+    
     retval = rc_write_reply(r, use_xml, NC_MSG_REPLY, reply);
     nc_server_reply_free(reply);
 
-    lyd_free_withsiblings(data);
-    lyd_free_withsiblings(root);
+    lyd_free_siblings(data);
+    lyd_free_siblings(root);
     
     if (pcvec)
         rc_vec_free(pcvec);
-    
-    VRB("%s retval:%d", __FUNCTION__, retval);
+
+    DBG("%s retval:%d", __FUNCTION__, retval);
     
     return retval;
 }
@@ -614,7 +635,7 @@ api_operations_get(struct ly_ctx *ly_ctx,
     sr_schema_t *schemas = NULL;
     size_t schema_count, i, j=0;
 
-    VRB("%s", __FUNCTION__);
+    DBG("%s", __FUNCTION__);
     if ((cbx = cbuf_new()) == NULL) {
         goto done;
     }
@@ -686,7 +707,7 @@ done:
         cbuf_free(cbx);
     
 #endif    
-    VRB("%s retval:%d", __FUNCTION__, retval);
+    DBG("%s retval:%d", __FUNCTION__, retval);
     return retval;
 }
 ///////////////////////////////////////////////////////////////
@@ -957,7 +978,7 @@ op_editconfig(struct lyd_node *rpc, sr_session_ctx_t *srs, enum NP2_EDIT_OP rest
     }
 
     lyd_print_mem(&str, config, LYD_XML, LYP_WITHSIBLINGS | LYP_FORMAT);
-    VRB("EDIT_CONFIG: ds %d, defop %s, testopt %d, config:\n%s", srs, defop2str(defop), testopt, str);
+    DBG("EDIT_CONFIG: ds %d, defop %s, testopt %d, config:\n%s", srs, defop2str(defop), testopt, str);
     free(str);
     str = NULL;
 
@@ -1273,7 +1294,7 @@ cleanup:
 
     switch (testopt) {
     case NP2_EDIT_TESTOPT_SET:
-        VRB("edit-config test-option \"set\" not supported, validation will be performed.");
+        DBG("edit-config test-option \"set\" not supported, validation will be performed.");
         /* fallthrough */
     case NP2_EDIT_TESTOPT_TESTANDSET:
         /* commit changes */
@@ -1368,7 +1389,7 @@ int api_data_post(struct ly_ctx *ly_ctx,
     struct lyd_node *node, *data;
     const struct lys_module *ietfnc = NULL;
     cbuf *cxml = NULL;
-    VRB("%s", __FUNCTION__);
+    DBG("%s", __FUNCTION__);
 
     ietfnc = ly_ctx_get_module(ly_ctx, "ietf-netconf", NULL, 1);
     if (!ietfnc) {
@@ -1415,14 +1436,14 @@ int api_data_post(struct ly_ctx *ly_ctx,
         if ((cxml = cbuf_new()) == NULL)
         goto done;
         api_path2xml(ly_ctx, pcvec, pi, content, 1, use_xml, cxml);
-        VRB("cxml: %s", cbuf_get(cxml));
+        DBG("cxml: %s", cbuf_get(cxml));
         if (use_xml) {
             node = lyd_new_anydata(data, ietfnc, "config", cbuf_get(cxml), LYD_ANYDATA_SXML);
         } else {
             node = lyd_new_anydata(data, ietfnc, "config", cbuf_get(cxml), LYD_ANYDATA_JSON);
         }
     } else { /* datastore */
-        VRB("%s", content);
+        DBG("%s", content);
         if (use_xml) {
             node = lyd_new_anydata(data, ietfnc, "config", content, LYD_ANYDATA_SXML);
         } else {
@@ -1483,7 +1504,7 @@ int api_data_patch(struct ly_ctx *ly_ctx,
     struct lyd_node *node, *data;
     const struct lys_module *ietfnc = NULL;
     cbuf *cxml = NULL;
-    VRB("%s", __FUNCTION__);
+    DBG("%s", __FUNCTION__);
 
     ietfnc = ly_ctx_get_module(ly_ctx, "ietf-netconf", NULL, 1);
     if (!ietfnc) {
@@ -1530,14 +1551,14 @@ int api_data_patch(struct ly_ctx *ly_ctx,
         if ((cxml = cbuf_new()) == NULL)
         goto done;
         api_path2xml(ly_ctx, pcvec, pi, content, 0, use_xml, cxml);
-        VRB("cxml: %s", cbuf_get(cxml));
+        DBG("cxml: %s", cbuf_get(cxml));
         if (use_xml) {
             node = lyd_new_anydata(data, ietfnc, "config", cbuf_get(cxml), LYD_ANYDATA_SXML);
         } else {
             node = lyd_new_anydata(data, ietfnc, "config", cbuf_get(cxml), LYD_ANYDATA_JSON);
         }
     } else { /* datastore */
-        VRB("%s", content);
+        DBG("%s", content);
         if (use_xml) {
             node = lyd_new_anydata(data, ietfnc, "config", content, LYD_ANYDATA_SXML);
         } else {
@@ -1591,7 +1612,7 @@ int api_data_put(struct ly_ctx *ly_ctx,
     struct lyd_node *node, *data;
     const struct lys_module *ietfnc = NULL;
     cbuf *cxml = NULL;
-    VRB("%s", __FUNCTION__);
+    DBG("%s", __FUNCTION__);
 
     ietfnc = ly_ctx_get_module(ly_ctx, "ietf-netconf", NULL, 1);
     if (!ietfnc) {
@@ -1637,14 +1658,14 @@ int api_data_put(struct ly_ctx *ly_ctx,
         if ((cxml = cbuf_new()) == NULL)
         goto done;
         api_path2xml(ly_ctx, pcvec, pi, content, 0, use_xml, cxml);
-        VRB("cxml: %s", cbuf_get(cxml));
+        DBG("cxml: %s", cbuf_get(cxml));
         if (use_xml) {
             node = lyd_new_anydata(data, ietfnc, "config", cbuf_get(cxml), LYD_ANYDATA_SXML);
         } else {
             node = lyd_new_anydata(data, ietfnc, "config", cbuf_get(cxml), LYD_ANYDATA_JSON);
         }
     } else { /* datastore */
-        VRB("%s", content);
+        DBG("%s", content);
         if (use_xml) {
             node = lyd_new_anydata(data, ietfnc, "config", content, LYD_ANYDATA_SXML);
         } else {
@@ -1695,13 +1716,13 @@ int api_data_delete(struct ly_ctx *ly_ctx,
     struct nc_server_reply *ereply = NULL;
     sr_datastore_t ds = 0;
     char xpath[80]={'\0'};
-    VRB("%s", __FUNCTION__);
+    DBG("%s", __FUNCTION__);
 
     /* convert pcvec to xpath */
     if ((rc = api_path2xpath(ly_ctx, pcvec, pi, xpath)) < 0) {
         goto cleanup;
     }
-    VRB("%s xpath = %s", __FUNCTION__, xpath);
+    DBG("%s xpath = %s", __FUNCTION__, xpath);
 
     ds = SR_DS_RUNNING;
     if (ds != sessions->ds) {

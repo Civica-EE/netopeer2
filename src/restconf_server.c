@@ -1,7 +1,37 @@
-/* -*- mode:c; indent-tabs-mode:nil; tab-width:4; c-basic-offset:4 -*- */
-/*     vi: set ts=4 sw=4 expandtab:                                    */
-
-/*@COPYRIGHT@*/
+/**
+ * @file restconf_server.c
+ *
+ * @brief modified from netopeer2-server main.c,
+ *  add FastCGI to be a RESTCONF server
+ *
+ * @author Radek Krejci <rkrejci@cesnet.cz>
+ * @author Michal Vasko <mvasko@cesnet.cz>
+ * @author Hongcheng Zhong <spartazhc@gmail.com>
+ * @author Alexandru Ponoviciu <alexandru.panoviciu@civica.co.uk>
+ *
+ * @copyright
+ * Copyright (c) 2022 Civica NI Ltd
+ * Copyright (c) 2019 Intel and/or its affiliates.
+ * Copyright (c) 2016 - 2017 CESNET, z.s.p.o.
+ *
+ * This source code is licensed under BSD 3-Clause License (the "License").
+ * You may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://opensource.org/licenses/BSD-3-Clause
+ *
+ * Portions licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.  You may
+ * obtain a copy of the License at:
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 #include <sys/stat.h>
 #include <unistd.h>
@@ -16,31 +46,10 @@
 #include "restconf_path.h"
 
 static int sock;
-
-/*! Determine the root of the RESTCONF API
- * @param[in]  r        Fastcgi request handle
- * @note Hardcoded to "/restconf"
- * Return see RFC8040 3.1 and RFC7320
- * In line with the best practices defined by [RFC7320], RESTCONF
- * enables deployments to specify where the RESTCONF API is located.
- */
-static int
-api_well_known(FCGX_Request *r)
-{
-    VRB("%s", __FUNCTION__);
-    FCGX_FPrintF(r->out, "Content-Type: application/xrd+xml\r\n");
-    FCGX_FPrintF(r->out, "\r\n");
-    FCGX_SetExitStatus(200, r->out); /* OK */
-    FCGX_FPrintF(r->out, "<XRD xmlns='http://docs.oasis-open.org/ns/xri/xrd-1.0'>\n");
-    FCGX_FPrintF(r->out, "   <Link rel='restconf' href='cgi-bin/restconf'/>\n");
-    FCGX_FPrintF(r->out, "</XRD>\r\n");
-
-    return 0;
-}
-
+static volatile int stopping = 0;
 
 /*!
- * See https://tools.ietf.org/html/rfc7895
+ * See RFC 8040 3.3.3
  */
 static int
 api_yang_library_version(struct ly_ctx *ly_ctx,
@@ -49,30 +58,36 @@ api_yang_library_version(struct ly_ctx *ly_ctx,
 {
     char  *media_accept;
     int    use_xml = 0; /* By default use JSON */
-    char   buf[120];
     const struct lys_module *yanglib = NULL;
 
     (void) srs;
 
-    VRB("%s", __FUNCTION__);
+    DBG("%s", __FUNCTION__);
+    
     media_accept = FCGX_GetParam("HTTP_ACCEPT", r->envp);
-    if (strcmp(media_accept, "application/yang-data+xml")==0)
+    if (media_accept && strcmp(media_accept, "application/yang-data+xml")==0)
         use_xml++;
-    yanglib = ly_ctx_get_module(ly_ctx, "ietf-yang-library", NULL, 1);
+    
+    yanglib = ly_ctx_get_module_latest(ly_ctx, "ietf-yang-library");
     if (!yanglib) {
-        ERR("Session : missing \"ietf-netconf\" schema in the context.");
+        ERR("Session : missing \"ietf-yang-library\" schema in the context.");
         return NC_MSG_ERROR;
     }
-    if (use_xml){
-        sprintf(buf, "<yang-library-version xmlns=\"urn:ietf:params:xml:ns:yang:ietf-restconf\">\n  %s\n</yang-library-version>\n", yanglib->rev->date);
-    } else {
-        sprintf(buf, "{\"yang-library-version\": \"%s\"}", yanglib->rev->date);
-    }
+    
     FCGX_SetExitStatus(200, r->out); /* OK */
     FCGX_FPrintF(r->out, "Content-Type: application/yang-data+%s\r\n", use_xml?"xml":"json");
     FCGX_FPrintF(r->out, "\r\n");
-    FCGX_FPrintF(r->out, "%s", buf);
+    if (use_xml){
+        FCGX_FPrintF(r->out,
+                     "<yang-library-version xmlns=\"urn:ietf:params:xml:ns:yang:ietf-restconf\">\n  %s\n</yang-library-version>\n",
+                     yanglib->revision);
+    } else {
+        FCGX_FPrintF(r->out,
+                     "{\"yang-library-version\": \"%s\"}",
+                     yanglib->revision);
+    }
     FCGX_FPrintF(r->out, "\n\n");
+    
     return 0;
 }
 
@@ -100,9 +115,9 @@ api_data(struct ly_ctx *ly_ctx,
     int     retval = -1;
     char   *request_method;
 
-    VRB("%s", __FUNCTION__);
+    DBG("%s", __FUNCTION__);
     request_method = FCGX_GetParam("REQUEST_METHOD", r->envp);
-    VRB("%s method:%s", __FUNCTION__, request_method);
+    DBG("%s method:%s", __FUNCTION__, request_method);
     if (strcmp(request_method, "OPTIONS")==0)
         retval = api_data_options(r);
     else if (strcmp(request_method, "HEAD")==0)
@@ -118,8 +133,8 @@ api_data(struct ly_ctx *ly_ctx,
     else if (strcmp(request_method, "DELETE")==0)
 	retval = api_data_delete(ly_ctx, srs,r, pcvec, pi, qvec, use_xml);
     else
-        retval = notfound(r);
-    VRB("%s retval:%d", __FUNCTION__, retval);
+        retval = restconf_notfound(r);
+    DBG("%s retval:%d", __FUNCTION__, retval);
     return retval;
 }
 
@@ -153,9 +168,9 @@ api_operations(struct ly_ctx *ly_ctx,
     (void) data;
     (void) parse_xml;
 
-    VRB("%s", __FUNCTION__);
+    DBG("%s", __FUNCTION__);
     request_method = FCGX_GetParam("REQUEST_METHOD", r->envp);
-    VRB("%s method:%s", __FUNCTION__, request_method);
+    DBG("%s method:%s", __FUNCTION__, request_method);
     if (strcmp(request_method, "GET")==0){
         retval = api_operations_get(ly_ctx,
                                 srs,r, qvec, use_xml);
@@ -165,7 +180,7 @@ api_operations(struct ly_ctx *ly_ctx,
         //                         srs,r, pcvec, pi, qvec, use_xml);
     }
     else
-	    retval = notfound(r);
+	    retval = restconf_notfound(r);
     return retval;
 }
 
@@ -183,30 +198,39 @@ api_root(struct ly_ctx *ly_ctx,
 {
     char  *media_accept;
     int   use_xml = 0; /* By default use JSON */
-    char   buf[160];
     const struct lys_module *yanglib = NULL;
 
     (void) srs;
 
-    VRB("%s", __FUNCTION__);
+    DBG("ly_ctx %p srs %p", ly_ctx, srs);
+    
     media_accept = FCGX_GetParam("HTTP_ACCEPT", r->envp);
-    if (strcmp(media_accept, "application/yang-data+xml")==0)
+    if (media_accept && strcmp(media_accept, "application/yang-data+xml")==0)
         use_xml++;
-    yanglib = ly_ctx_get_module(ly_ctx, "ietf-yang-library", NULL, 1);
+    
+    yanglib = ly_ctx_get_module_latest(ly_ctx, "ietf-yang-library");
     if (!yanglib) {
-        ERR("Session : missing \"ietf-netconf\" schema in the context.");
+        ERR("Session : missing \"ietf-yang-library\" schema in the context.");
         return NC_MSG_ERROR;
     }
-    if (use_xml){
-        sprintf(buf, "<restconf xmlns=\"urn:ietf:params:xml:ns:yang:ietf-restconf\">\n  <data/>\n  <operations/>\n  <yang-library-version>%s</yang-library-version>\n</restconf>", yanglib->rev->date);
-    } else {
-        sprintf(buf, "{\"ietf-restconf:restconf\": {\"data\": {},\"operations\": {},\"yang-library-version\": \"%s\"}}", yanglib->rev->date);
-    }
+
+
     FCGX_SetExitStatus(200, r->out); /* OK */
     FCGX_FPrintF(r->out, "Content-Type: application/yang-data+%s\r\n", use_xml?"xml":"json");
     FCGX_FPrintF(r->out, "\r\n");
-    FCGX_FPrintF(r->out, "%s", buf);
-    FCGX_FPrintF(r->out, "\n\n");
+    
+    if (use_xml){
+        FCGX_FPrintF(r->out,
+                     "<restconf xmlns=\"urn:ietf:params:xml:ns:yang:ietf-restconf\">\n  <data/>\n  <operations/>\n  <yang-library-version>%s</yang-library-version>\n</restconf>",
+                     yanglib->revision);
+    } else {
+        FCGX_FPrintF(r->out,
+                     "{\"ietf-restconf:restconf\": {\"data\": {},\"operations\": {},\"yang-library-version\": \"%s\"}}",
+                     yanglib->revision);
+    }
+    
+    FCGX_FPrintF(r->out, "\r\n\r\n");
+
     return 0;
 }
 
@@ -235,8 +259,10 @@ api_restconf(struct ly_ctx *ly_ctx,
     int    parse_xml = 0; /* By default expect and parse JSON */
     int    use_xml = 0;   /* By default use JSON */
 
-    VRB("%s", __FUNCTION__);
-    test(r, 1);
+#ifndef NDBEBUG
+    DBG("%s", __FUNCTION__);
+    restconf_dump_request(r, 1);
+#endif
     
     path = FCGX_GetParam("REQUEST_URI", r->envp);
     query = FCGX_GetParam("QUERY_STRING", r->envp);
@@ -249,36 +275,41 @@ api_restconf(struct ly_ctx *ly_ctx,
 	    parse_xml++;
     if ((pvec = clicon_strsep(path, "/", &pn)) == NULL)
 	    goto done;
+    
     /* Sanity check of path. Should be /restconf/ */
     if (pn < 2){
-        notfound(r);
+        restconf_notfound(r);
         goto ok;
     }
     if (strlen(pvec[0]) != 0){
-        retval = notfound(r);
+        retval = restconf_notfound(r);
         goto done;
     }
     if (strcmp(pvec[1], RESTCONF_API)){
-        retval = notfound(r);
+        retval = restconf_notfound(r);
         goto done;
     }
+
+#ifndef NDEBUG
     /* print pvec for debug */
-    VRB("pn = %d", pn);
+    DBG("pn = %d", pn);
     int i = 0;
     while (pvec[i] != NULL) {
-        VRB("pvec[%d] = %s", i, pvec[i]);
+        DBG("pvec[%d] = %s", i, pvec[i]);
         ++i;
     }
-
+#endif
+    
     if (pn == 2){
         retval = api_root(ly_ctx,srs, r);
         goto done;
     }
     if ((method = pvec[2]) == NULL){
-        retval = notfound(r);
+        retval = restconf_notfound(r);
         goto done;
     }
-    VRB("%s: method=%s", __FUNCTION__, method);
+    DBG("%s: method=%s", __FUNCTION__, method);
+    
     if (str2rc_vec(query, '&', '=', &qvec) < 0)
         goto done;
     if (str2rc_vec(path, '/', '=', &pcvec) < 0) /* rest url eg /album=ricky/foo */
@@ -287,7 +318,7 @@ api_restconf(struct ly_ctx *ly_ctx,
     if ((cb = readdata(r)) == NULL)
         goto done;
     data = cbuf_get(cb);
-    VRB("%s DATA=%s", __FUNCTION__, data);
+    DBG("%s DATA=%s", __FUNCTION__, data);
 
     if (strcmp(method, "yang-library-version")==0){
         if (api_yang_library_version(ly_ctx, srs, r) < 0)
@@ -305,14 +336,14 @@ api_restconf(struct ly_ctx *ly_ctx,
     {
         FCGX_SetExitStatus(200, r->out); /* OK */
         FCGX_FPrintF(r->out, "Content-Type: text/html\r\n\r\n");
-        test(r, 0);
+        restconf_dump_request(r, 0);
     }
     else
-        notfound(r);
+        restconf_notfound(r);
 ok:
     retval = 0;
 done:
-    VRB("%s retval:%d", __FUNCTION__, retval);
+    DBG("%s retval:%d", __FUNCTION__, retval);
     if (pvec)
 	free(pvec);
     return retval;
@@ -332,7 +363,7 @@ int restconf_server_init (int backlog)
         return -1;
     }
     
-    VRB("%s: Opening FCGX socket: %s", __FUNCTION__, NP2SRV_FCGI_SOCKPATH);
+    DBG("%s: Opening FCGX socket: %s", __FUNCTION__, NP2SRV_FCGI_SOCKPATH);
 
     if ((sock = FCGX_OpenSocket(NP2SRV_FCGI_SOCKPATH, backlog)) < 0){
         ERR("FCGX_Init error.");
@@ -356,7 +387,17 @@ int restconf_server_shutdown ()
     return 0;
 }
 
-int restconf_worker_thread (int idx, ATOMIC_T loop_continue)
+int restconf_server_stop ()
+{
+    FCGX_ShutdownPending();
+    stopping = 1;
+    return 0;
+}
+
+
+//extern ATOMIC_T loop_continue;
+
+int restconf_worker_thread (int idx)
 {
     FCGX_Request  request;
     char *path;
@@ -372,20 +413,22 @@ int restconf_worker_thread (int idx, ATOMIC_T loop_continue)
         return -1;
     }
 
-    while (ATOMIC_LOAD_RELAXED(loop_continue))
+    while (!stopping)
     {
-        VRB("[%d] in main while loop.", idx);
+        DBG("[%d] in main while loop.", idx);
 
         if (FCGX_Accept_r(&request) < 0) {
-            ERR("[%d] FCGX_Accept_r error.", idx);
+            if (stopping)
+                break;
+            ERR("[%d] FCGX_Accept_r error %s.", idx);
             return -1;
         }
         
-        VRB("[%d] FCGX accepted, ------------", idx);
+        DBG("[%d] FCGX accepted, ------------", idx);
         
         if ((path = FCGX_GetParam("REQUEST_URI", request.envp)) != NULL)
         {
-            VRB("[%d] path: %s", idx, path);
+            DBG("[%d] path: '%s'", idx, path);
             
             if (strncmp(path, "/" RESTCONF_API, strlen("/" RESTCONF_API)) == 0)
             {
@@ -397,24 +440,22 @@ int restconf_worker_thread (int idx, ATOMIC_T loop_continue)
                 api_stream(h, &request, stream_path, &finish);
             }
 #endif
-            else if (strncmp(path, RESTCONF_WELL_KNOWN, strlen(RESTCONF_WELL_KNOWN)) == 0)
-            {
-                api_well_known(&request);
-            }
             else
             {
-                VRB("[%d] top-level %s not found", idx, path);
-                notfound(&request);
+                DBG("[%d] top-level %s not found", idx, path);
+                restconf_notfound(&request);
             }
         }
         else
         {
-            VRB("[%d] NULL URI", idx);
-            notfound(&request);
+            DBG("[%d] NULL URI", idx);
+            restconf_notfound(&request);
         }
                 
         FCGX_Finish_r(&request);
     }
+
+    DBG("Restconf thread %d exiting", idx);
     
     return 0;
 }

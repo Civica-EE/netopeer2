@@ -34,6 +34,10 @@ elseif("${BUILD_TYPE_UPPER}" STREQUAL "RELWITHDEBUG")
     set(CMAKE_BUILD_TYPE "RelWithDebug" CACHE STRING "Build Type" FORCE)
 endif()
 
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__RILE__='\"$(firstword $(filter-out %.ts,$^))\"'")
+
+message(INFO, "Build type ${CMAKE_BUILD_TYPE}")
+
 # check the supported platform
 if(NOT UNIX)
     message(FATAL_ERROR "Only *nix like systems are supported.")
@@ -364,6 +368,14 @@ if(MERGE_LISTEN_CONFIG)
         endif()
     ")
 endif()
+
+# Restconf is enabled - web bits
+if(ENABLE_RESTCONF)
+  install(FILES ${SCRIPT_DIR}/restconf.cgi
+    DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}/netopeer2/
+    PERMISSIONS OWNER_READ OWNER_EXECUTE OWNER_WRITE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
+endif()
+
 
 # tests
 if(ENABLE_TESTS)

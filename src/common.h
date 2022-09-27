@@ -182,6 +182,10 @@ int np2srv_new_session_cb(const char *client_name, struct nc_session *new_sessio
  */
 int np2srv_url_setcap(void);
 
+
+struct nc_server_reply *
+np2srv_err_reply_sr(const sr_error_info_t *err_info);
+
 #ifdef NP2SRV_URL_CAPAB
 
 /**

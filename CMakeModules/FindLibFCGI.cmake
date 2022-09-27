@@ -76,7 +76,7 @@ else (LIBFCGI_LIBRARIES AND LIBFCGI_INCLUDE_DIRS)
   include(FindPackageHandleStandardArgs)
   # handle the QUIETLY and REQUIRED arguments and set LIBFCGI_FOUND to TRUE
   # if all listed variables are TRUE
-  find_package_handle_standard_args(libfcgi  DEFAULT_MSG
+  find_package_handle_standard_args(LibFCGI  DEFAULT_MSG
                                     LIBFCGI_LIBRARY LIBFCGI_INCLUDE_DIR)
 
   # show the LIBFCGI_INCLUDE_DIRS and LIBFCGI_LIBRARIES variables only in the advanced view

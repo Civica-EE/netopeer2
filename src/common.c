@@ -168,6 +168,22 @@ np_get_user_sess(sr_session_ctx_t *ev_sess, struct nc_session **nc_sess, struct 
 
     sr_session_get_orig_data(ev_sess, 0, &size, (const void **)&nc_id);
 
+    if (*nc_id == -1)
+    {
+        static struct np2_user_sess dummy = {};
+            
+         // hack, just return the session itself if nc session id is -1
+        if (nc_sess)
+            *nc_sess = NULL;
+        
+        if (user_sess)
+        {
+            dummy.sess = ev_sess;
+            *user_sess = &dummy;
+        }
+        return SR_ERR_OK;
+    }
+    
     rc = np_get_nc_sess_by_id(0, *nc_id, &ncs);
     if (rc) {
         return rc;

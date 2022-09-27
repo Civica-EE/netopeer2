@@ -1,10 +1,17 @@
 /**
- * @file restconf_path.c
- * @author Hongcheng Zhong <spartazhc@gmail.com>
+ * @file restconf_lib.c
  * @brief tool functions to process url to xml or xpath etc.
  * some code are from clixon_xml_map.c in clixon project.
  *
+ * @author Hongcheng Zhong <spartazhc@gmail.com>
+ * @author Alexandru Ponoviciu <alexandru.panoviciu@civica.co.uk>
+ *
+ * @copyright
+ * Copyright (c) 2022 Civica NI Ltd
  * Copyright (c) 2019 Intel and/or its affiliates.
+ * Copyright (C) 2009-2019 Olof Hagsand and Benny Holmgren
+ * Copyright (C) 2001-2019 Olof Hagsand
+ * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at:
@@ -16,22 +23,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
-*/
-
-/*
- * Copyright (c) 2019 Intel and/or its affiliates.
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at:
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
-*/
+ */
 
 #include <stdlib.h>
 #include <string.h>
@@ -290,6 +282,8 @@ str2rc_vec(char  *string,
         rc_vec_free(cvv);
 	    cvv = NULL;
     }
+    if (s0)
+	free(s0);
     goto done;
 }
 
@@ -375,9 +369,11 @@ int api_path2xml(struct ly_ctx *ly_ctx,
         v = rindex(v, '}');
         *v = '\0';
     }
-    VRB("%s striped data: [%s]", __FUNCTION__, data);
-
+    DBG("%s striped data: [%s]", __FUNCTION__, data);
     int rc_len = rc_vec_len(cvv);
+#if 1
+    abort();
+#else
     for (int i = offset; i < rc_len; i++){
         cv = rc_vec_i(cvv, i);
         if (i == offset) {
@@ -457,6 +453,7 @@ int api_path2xml(struct ly_ctx *ly_ctx,
             cprintf(xpath, "/%s", cv->name);
         }
     }
+#endif
     /* add data part */
     if (post == 1 && usexml == 0) { // or use '{' in the beginning then don't need this
         cprintf(cxml, " \"%s", data);
@@ -471,12 +468,12 @@ int api_path2xml(struct ly_ctx *ly_ctx,
         }
         cprintf(cxml, "</%s>", topcontainer);
     } else {
-        VRB("cbtail: %s", cbuf_get(cbtail));
+        DBG("cbtail: %s", cbuf_get(cbtail));
         for (int i = cbuf_len(cbtail) - 1; i >= 0; --i) {
             cprintf(cxml, "%c ", (cbtail->cb_buffer)[i]);
         }
     }
-    // VRB("%s cxml: [%s]", __FUNCTION__, cbuf_get(cxml));
+    // DBG("%s cxml: [%s]", __FUNCTION__, cbuf_get(cxml));
     return 0;
 done:
     if (xpath)
@@ -515,16 +512,15 @@ done:
  */
 int
 api_path2xpath(struct ly_ctx *ly_ctx,
-            rc_vec  *cvv,
-            int      offset,
-            char    *xpath)
+               rc_vec  *cvv,
+               int      offset,
+               char    *xpath)
 {
     int         vcount;
     int         key_flag = 0;
     rc_var     *cv;
     const struct lys_module *mod = NULL;
-    struct      ly_set *nodeset;
-    struct      lys_node *snode;
+    struct      lysc_node *snode;
     struct      lys_node_leaf **keys;
     char       *val;
     char       *v;
@@ -554,14 +550,10 @@ api_path2xpath(struct ly_ctx *ly_ctx,
             if (key_flag != 1) { /* only need to find keys lyd_node once */
                 sprintf(keypath, "/%s/%s", xpath + strlen(modname)+2, cv->name);
 
-                mod = ly_ctx_get_module(ly_ctx, modname, NULL, 1);
-                nodeset = lys_find_path(mod, NULL, keypath);
-                if (nodeset != NULL) {
-                    if (nodeset->number) {
-                        snode = (struct lys_node *)nodeset->set.d[0];
-                        keys = ((struct lys_node_list *)snode)->keys;
-                        ly_set_free(nodeset);
-                    }
+                mod = ly_ctx_get_module_latest(ly_ctx, modname);
+                snode = lys_find_path(ly_ctx, NULL, keypath, 0);
+                if (snode) {
+                    keys = NULL; //((struct lys_node_list *)snode)->keys;
                 } else {
                     /* lys_find_path error, add to xpath and return,
                                 error will be reported later */
@@ -584,6 +576,7 @@ api_path2xpath(struct ly_ctx *ly_ctx,
             sprintf(tmp, "/%s", cv->name);
             strcat(xpath, tmp);
             v = val;
+#if 0
             int j = 0;
             while (keys[j] != NULL) {
                 /* if there is lack of key-value in input, error should be reported  */
@@ -593,11 +586,14 @@ api_path2xpath(struct ly_ctx *ly_ctx,
                 v += strlen(v)+1;
                 vcount -= (strlen(v) + 1);
                 ++j;
-            } // if key-calues are more than key number in yang, now will ignore extra key-values
+            } // if key-calues are more than key number in yang, now will
+              // ignore extra key-values
+#endif
         } else { // if no key specified
             sprintf(tmp, "/%s", cv->name);
             strcat(xpath, tmp);
         }
     }
+
     return 0;
 }

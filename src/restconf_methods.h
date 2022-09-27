@@ -17,6 +17,8 @@
  * limitations under the License.
 */
 
+*** remove ***
+
 #ifndef _RESTCONF_METHODS_H_
 #define _RESTCONF_METHODS_H_
 
