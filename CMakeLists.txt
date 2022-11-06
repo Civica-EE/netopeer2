@@ -75,7 +75,7 @@ set(THREAD_COUNT 5 CACHE STRING "Number of threads accepting new sessions and ha
 set(NACM_RECOVERY_UID 0 CACHE STRING "NACM recovery session UID that has unrestricted access")
 set(POLL_IO_TIMEOUT 10 CACHE STRING "Timeout in milliseconds of polling sessions for new data. It is also used for synchronization of low level IO such as sending a reply while a notification is being sent")
 set(YANG_MODULE_DIR "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DATADIR}/yang/modules/netopeer2" CACHE STRING "Directory where to copy the YANG modules to")
-option(ENABLE_RESTCONF "Enable RESTCONF capability" OFF)
+option(ENABLE_RESTCONF "Enable RESTCONF capability (requires libfcgi)" OFF)
 
 
 # script options
@@ -246,16 +246,6 @@ endif()
 if(LIBNETCONF2_ENABLED_TLS)
     list(APPEND SERVER_SRC src/netconf_server_tls.c)
 endif()
-
-# Restconf is enabled - extra sources
-if(ENABLE_RESTCONF)
-  list(APPEND SERVER_SRC
-           src/restconf_lib.c
-           src/restconf_path.c
-           src/restconf_methods.c
-           src/restconf_server.c)
-endif()
-
 
 # link compat
 use_compat()

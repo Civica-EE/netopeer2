@@ -88,13 +88,6 @@ signal_handler(int sig)
             exit(EXIT_FAILURE);
         }
         ATOMIC_STORE_RELAXED(loop_continue, 0);
-#ifdef ENABLE_RESTCONF
-        restconf_server_stop();
-        for (int i = 1; i < NP2SRV_THREAD_COUNT; ++i) {
-            if (i % 2)
-                pthread_kill(np2srv.workers[i], SIGUSR1);
-    }
-#endif        
         break;
     default:
         exit(EXIT_FAILURE);
@@ -633,6 +626,26 @@ server_init(void)
             goto error;
         }
     }
+    
+#ifdef ENABLE_RESTCONF
+    if (np2srv.fcgi_sock_path)
+    {
+        if (nc_server_add_endpt("fcgi", NC_TI_FCGI)) {
+            goto error;
+        }
+        
+        if (nc_server_endpt_set_perms("fcgi",
+                                      np2srv.fcgi_sock_mode,
+                                      np2srv.fcgi_sock_uid,
+                                      np2srv.fcgi_sock_gid)) {
+            goto error;
+        }
+        
+        if (nc_server_endpt_set_address("fcgi", np2srv.fcgi_sock_path)) {
+            goto error;
+        }
+    }
+#endif
 
     /* Restore a previous confirmed commit if restore file exists */
     ncc_try_restore();
@@ -672,11 +685,6 @@ server_destroy(void)
         nc_ps_free(np2srv.nc_ps);
     }
 
-#ifdef ENABLE_RESTCONF
-    /* restconf cleanup */
-    restconf_server_shutdown();
-#endif
-    
     /* libnetconf2 cleanup */
     nc_server_destroy();
 
@@ -1056,12 +1064,7 @@ worker_thread (void *arg)
     int idx = (int) arg;
     void *rc;
 
-#ifdef ENABLE_RESTCONF
-    if (idx % 2)
-        rc = (void*) restconf_worker_thread(idx);
-    else
-#endif
-        rc = netconf_worker_thread(idx);
+    rc = netconf_worker_thread(idx);
 
     if (rc)
         ERR("Thread %d returned %p!", idx, rc);
@@ -1088,6 +1091,7 @@ print_usage(char *progname)
     fprintf(stdout, " -m MODE    Set mode for the listening UNIX socket.\n");
     fprintf(stdout, " -u UID     Set UID/user for the listening UNIX socket.\n");
     fprintf(stdout, " -g GID     Set GID/group for the listening UNIX socket.\n");
+    fprintf(stdout, " -R[PATH]   Enable RestConf FCGI module and specify UNIX socket path (default is \"%s\").\n", NP2SRV_FCGI_SOCKPATH);
     fprintf(stdout, " -t TIMEOUT Timeout in seconds of all sysrepo functions (applying edit-config, reading data, ...),\n");
     fprintf(stdout, "            if 0 (default), the default sysrepo timeouts are used.\n");
     fprintf(stdout, " -v LEVEL   Verbose output level:\n");
@@ -1146,7 +1150,7 @@ main(int argc, char *argv[])
     np2srv.server_dir = SERVER_DIR;
 
     /* process command line options */
-    while ((c = getopt(argc, argv, "dhVp:f:U::m:u:g:t:v:c:")) != -1) {
+    while ((c = getopt(argc, argv, "dhVp:f:U::m:u:g:R::t:v:c:")) != -1) {
         switch (c) {
         case 'd':
             daemonize = 0;
@@ -1196,12 +1200,20 @@ main(int argc, char *argv[])
         case 'U':
             np2srv.unix_path = optarg ? optarg : NP2SRV_UNIX_SOCK_PATH;
             break;
+#ifdef ENABLE_RESTCONF
+        case 'R':
+            np2srv.fcgi_sock_path = optarg ? optarg : NP2SRV_FCGI_SOCKPATH;
+            break;
+#endif
         case 'm':
             np2srv.unix_mode = strtoul(optarg, &ptr, 8);
             if (*ptr || (np2srv.unix_mode > 0777)) {
                 ERR("Invalid UNIX socket mode \"%s\".", optarg);
                 return EXIT_FAILURE;
             }
+#ifdef ENABLE_RESTCONF
+            np2srv.fcgi_sock_mode = np2srv.unix_mode;
+#endif
             break;
         case 'u':
             np2srv.unix_uid = strtoul(optarg, &ptr, 10);
@@ -1213,6 +1225,9 @@ main(int argc, char *argv[])
                 }
                 np2srv.unix_uid = pwd->pw_uid;
             }
+#ifdef ENABLE_RESTCONF
+            np2srv.fcgi_sock_uid = np2srv.unix_uid;
+#endif
             break;
         case 'g':
             np2srv.unix_gid = strtoul(optarg, &ptr, 10);
@@ -1224,6 +1239,9 @@ main(int argc, char *argv[])
                 }
                 np2srv.unix_gid = grp->gr_gid;
             }
+#ifdef ENABLE_RESTCONF
+            np2srv.fcgi_sock_gid = np2srv.unix_gid;
+#endif
             break;
         case 't':
             np2srv.sr_timeout = strtoul(optarg, &ptr, 10);
@@ -1342,15 +1360,6 @@ main(int argc, char *argv[])
         goto cleanup;
     }
 
-#ifdef ENABLE_RESTCONF
-    /* Note backlog actually 2xserving threads so slight oversubscription (if
-       that matters here) */
-    if (restconf_server_init(NP2SRV_THREAD_COUNT)) {
-        ret = EXIT_FAILURE;
-        goto cleanup;
-    }
-#endif
-    
     /* subscribe to sysrepo */
     if (server_rpc_subscribe()) {
         ret = EXIT_FAILURE;

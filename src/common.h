@@ -64,6 +64,13 @@ struct np2srv {
 
     const char *server_dir;         /**< path to server files (just confirmed commit for the moment) */
 
+#ifdef ENABLE_RESTCONF
+    char *fcgi_sock_path;           /**< path to the FCGI UNIX socket */
+    mode_t fcgi_sock_mode;          /**< UNIX socket mode */
+    uid_t  fcgi_sock_uid;           /**< UNIX socket UID */
+    gid_t  fcgi_sock_gid;           /**< UNIX socket GID */
+#endif
+
     struct nc_pollsession *nc_ps;   /**< libnetconf2 pollsession structure */
     pthread_t workers[NP2SRV_THREAD_COUNT]; /**< worker threads handling sessions */
 };

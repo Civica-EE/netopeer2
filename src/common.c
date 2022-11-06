@@ -46,7 +46,13 @@
 #include "netconf_acm.h"
 #include "netconf_monitoring.h"
 
-struct np2srv np2srv = {.unix_mode = -1, .unix_uid = -1, .unix_gid = -1};
+struct np2srv np2srv = {.unix_mode = -1, .unix_uid = -1, .unix_gid = -1,
+#ifdef ENABLE_RESTCONF
+                        .fcgi_sock_mode = -1,
+                        .fcgi_sock_uid = -1,
+                        .fcgi_sock_gid = -1,
+#endif
+};
 
 int
 np_sleep(uint32_t ms)

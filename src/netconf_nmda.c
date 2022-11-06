@@ -116,7 +116,7 @@ np2srv_rpc_getdata_cb(sr_session_ctx_t *session, uint32_t UNUSED(sub_id), const 
         return SR_ERR_OK;
     }
 
-    lyd_print_file(stdout, input, LYD_XML, LYD_PRINT_WITHSIBLINGS);
+    //lyd_print_file(stdout, input, LYD_XML, LYD_PRINT_WITHSIBLINGS);
 
     /* get default value for with-defaults */
     nc_server_get_capab_withdefaults(&nc_wd, NULL);
