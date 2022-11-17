@@ -27,37 +27,41 @@ body {
 .jtree {
   font-family: sans,helvetica,arial;
   font-size: 14px;
+  line-height: 19px; /* Note this has to motch gradient heights above ! */
 }
+
 .jtree > .jtree__item {
   display: block;
 }
 
 .jtree__item {
-    /*
-  border-style: dotted;
-  border-width: 1px;
-  */
   display: none;
-  margin-top: 2px;
+  /*margin-top: 0px;*/
   padding-left: 15px;
 }
 
+
 .jtree__item--collapsible {    
   cursor: pointer;
-  overflow: hidden;
+  /*  overflow: hidden;*/
   position: relative;
   padding-left: 20px;
 }
+
+/* XXX needs changed to an actual element and hidden/shown along with the rest
+   as we had to remove 'overflow: hidden' from .jtree__item--collapsible so
+   the tooltips will show.
 
 .jtree__item--collapsible::after {
     background-color: lightgrey; 
     content: "";
     height: 100%;
     left: 9px;
+    top: 19px;
     position: absolute;
-    top: 18px;
     width: 1px;
 }
+*/
 
 .jtree__item--collapsible:hover > .jtree__ckey, .jtree__item--collapsible:hover > .jtree__value {
   text-decoration: underline;
@@ -72,7 +76,6 @@ body {
 }
 
 .jtree__toggle:checked ~ .jtree__ckey::before {
-    
     /*transform:rotate(90deg);*/
     content: "-";
 }
@@ -82,6 +85,7 @@ body {
   display: inline-block;
   width: 30%;
 }
+
 .jtree__key::after {
   /*content: ": ";*/
 }
@@ -91,6 +95,7 @@ body {
   display: inline-block;
   width: 100%;
 }
+
 .jtree__ckey::before {
     color: black;
     font-family: monospace;
@@ -100,6 +105,7 @@ body {
     position: absolute;
     left: 5px;
 }
+
 .jtree__ckey::after {
   /*content: ": ";*/
 }
@@ -110,8 +116,8 @@ body {
 }
 
 .jtree__value--string {
-  font-style: italic;
-  /*color: green;*/
+    font-style: italic;
+    /*color: green;*/
 }
 
 .jtree__value--number {
@@ -128,4 +134,74 @@ body {
 
 .console {
   font-size: 12px;
+}
+
+.jtree__tooltip {
+  font-size: 10px;
+  color: black;
+  display: none;
+  background: snow;
+  margin-left: 24px; /* Push the tooltip to the right rel to the parent */
+  /*margin-top: 20px;*/
+  padding: 0px 5px;
+  /* position: fixed; */
+  position: absolute;
+  z-index: 1000;
+  border-radius: 3px;
+  border: 1px solid lightsteelblue;
+}
+
+.jtree__tooltip > pre {
+  padding: 4px 0px;
+  margin: 0;
+  font-size: 10px;
+  line-height: 10px; /* XXX is this really needed? */
+}
+
+
+*:hover > .jtree__tooltip {
+  display: block;
+  /*opacity: 90%;*/
+}
+
+.jtree__dd {
+    display: inline;
+    overflow: hidden;
+}
+
+.jtree__dd-btn {
+  border: none;
+  outline: none;
+  padding: 4px 6px;
+  background-color: whitesmoke;
+  margin: 0;
+}
+
+.jtree__dd-btn::after {
+  content: " \25bc";
+}
+
+.jtree__dd-content {
+    display: none;
+    position: absolute;
+    box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+    background-color: whitesmoke;
+    z-index: 1;
+}
+
+.jtree__dd:hover > .jtree__dd-content {
+    display: block;
+}
+
+.jtree__dd:hover > .jtree__dd-btn {
+    background-color: lavender;
+}
+
+.jtree__dd-entry {
+    padding: 2px 4px;
+    display:block;
+}
+
+.jtree__dd-entry:hover {
+    background-color: lavender;
 }

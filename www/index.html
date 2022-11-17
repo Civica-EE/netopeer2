@@ -1,5 +1,5 @@
 <!--
- -- @file jtree.js
+ -- @file index.html
  --
  -- @brief Basic RestConf Web GUI Demo.
  --
@@ -17,7 +17,7 @@
 
 
 <!DOCTYPE html>
-<html>
+<html style="scrollbar-width: thin;">
 <head>
   <meta charset="utf-8">
   <title>RestConf GUI</title>
@@ -38,9 +38,11 @@
   </div>
 
   <div id="middle">
-    RestConf Operational Datastore
+    <div class="jtree__dd">
+      <button id="selected_ds" class="jtree__dd-btn">Select Datastore</button>
+      <div id="ds_list" class="jtree__dd-content"></div>
+    </div>
     <div id="restconf" class="jtree__viewer">
-      Loading...
     </div>
   </div>
 
@@ -56,36 +58,110 @@
                 overflow-y: auto; 
                 scrollbar-width: thin;
                 height:100%; box-sizing:border-box;">
-      <label id="debug" class="console"><!-- <br>foo<br>foo<br>foo<br>foo --></label>
+      <pre id="debug" class="console"></pre>
     </div>
   </div>
 
   
   <script src="res/jquery.js"></script>
   <script src="res/jtree.js"></script>
+  <script src="res/jrc.js"></script>
+<!--  <script src="res/underscore-umd-min.js"></script> -->
 
   
   <script>
     $(function () {
-        console.log("start at " + window.location);
-        
-        function say (x) {
-            $('#debug').append(x + '<br>');
-        }
-
+        //console.log("start at " + window.location);
         if (window.location.protocol == "file:")
         {
-            $('#restconf').html(jtreeViewer(some_json()))
+            //$('#restconf').html(jsonViewer(tree_json()))
+            $('#restconf').html(createTreeView(tree_json()))
         }
         else
         {
-            $.getJSON('/cgi-bin/restconf/data',
-                      //'/cgi-bin/restconf',
-                      function (data)
-                      {
-                          say("Loaded /cgi-bin/restconf/data")
-                          $('#restconf').html(jtreeViewer(data, false))
-	              });
+            // rcn is the restconf node we are managing
+            const rcn = new RcNode('/cgi-bin/restconf/')
+
+            rcn.fetchDsList().then(function (dsList) {
+                $dd=$("#ds_list")
+                $dd.html("")
+                for (var di in dsList) {
+                    let ds = dsList[di]
+                    say(`Found datastore: ${ds}`)
+                    $dd.append(`<label onclick='selectDs(this)' class="jtree__dd-entry">${ds}</label>`)
+                }
+            })
+
+            window.selectDs = function (label) {
+                dsName = label.childNodes[0].data
+                $('#selected_ds').text(dsName)
+                $('#restconf').html("Loading...")
+                
+                if (rcn.mods === undefined) {
+                    rcn.mods = {}
+                    updateSchemas(dsName)
+                } else {
+                    updateDs(dsName)
+                }
+            }
+            
+            // 1. Fetch the list of all available modules from the node (via
+            //    ietf-yang-library:yang-library/module-set), and then
+            //
+            // 2. Fetch the schema for each of these modules and resolve all
+            //    refernces between schemas.
+            function updateSchemas (dsName) {
+                rcn.fetchSchemaList().then(
+                    function (mods) { // successs
+                        say(`Found ${mods.length} YANG schemas`)
+
+                        let fetchJobs = Array()
+                        for (var mi in mods) {
+                            let mod = mods[mi]
+                            let modName = mod.name
+                            rcn.mods[modName] = {'info' : mod}
+                            //say(`Fetching schema for ${mod.name}`)
+                            fetchJobs.push(rcn.fetchSchemaYin(modName).then(
+                                    function (schema) { // success
+                                        say(`Schema for '${modName}' retrieved`)
+                                        rcn.mods[modName].yin = schema
+                                    },
+                                    function (req, cause, err) { // fail
+                                        say(`Failed to retrieve schema for '${modName}': ${cause} - ${err}`)
+                                    }))
+                        }
+
+                        $.when.apply($.when, fetchJobs).then(
+                            function () { // success - move on to step 3
+                                say("Schemas fetched.")
+                                resolveSchemas(rcn.mods)
+                                updateDs(dsName)
+                            },
+                            function (req, cause, err) { //fail
+                                say(`Fetching schemas failed: ${cause} - ${err}`)
+                            }
+                        )
+                    },
+                    function (req, cause, err) { // fail
+                        say(`Failed to retrieve YANG schema list: ${cause} - ${err}`)
+                    })
+            }
+
+            // 3. Download the data store Json, annotate it with whatever
+            //    metadata we gleaned from the corresponding schemas and chuck
+            //    it all into a tree view.
+            function updateDs (dsName) {
+                rcn.fetchDs(dsName).then(
+                    function (json) {  // success
+                        say(`Loaded ${dsName}`)
+                        $('#restconf').html(createTreeView(parseDs(json, rcn.mods), false))
+                    },
+
+                    function (req, cause, err) { // fail
+                        say(`Failed to retrieve datastore ${dsName}: ${cause} - ${err}`)
+                    }
+                )
+            }
         }
 
 
